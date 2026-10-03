@@ -1,0 +1,93 @@
+services:
+  # ── Message Broker ─────────────────────────────────────────────
+  broker:
+    image: rabbitmq:3.12-management-alpine
+    container_name: galactic-broker
+    hostname: galactic-broker
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-galaxy}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-starfleet}
+    volumes:
+      - broker_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - galactic-net
+
+  # ── State Store ────────────────────────────────────────────────
+  state_store:
+    image: redis:7-alpine
+    container_name: galactic-state-store
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - state_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - galactic-net
+
+  # ── Producer API ───────────────────────────────────────────────
+  producer:
+    build:
+      context: ./producer
+      dockerfile: Dockerfile
+    container_name: galactic-producer
+    ports:
+      - "${PRODUCER_PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-galaxy}:${RABBITMQ_PASS:-starfleet}@broker:5672
+      RABBITMQ_MGMT_URL: http://broker:15672
+      RABBITMQ_USER: ${RABBITMQ_USER:-galaxy}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-starfleet}
+      PRIMARY_QUEUE: ${PRIMARY_QUEUE:-primary_queue}
+      POISON_QUEUE: ${POISON_QUEUE:-poison_queue}
+    depends_on:
+      broker:
+        condition: service_healthy
+      state_store:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - galactic-net
+
+  # ── Consumer Worker ────────────────────────────────────────────
+  consumer:
+    build:
+      context: ./consumer
+      dockerfile: Dockerfile
+    container_name: galactic-consumer
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-galaxy}:${RABBITMQ_PASS:-starfleet}@broker:5672
+      REDIS_URL: redis://state_store:6379
+      PRIMARY_QUEUE: ${PRIMARY_QUEUE:-primary_queue}
+      POISON_QUEUE: ${POISON_QUEUE:-poison_queue}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+    depends_on:
+      broker:
+        condition: service_healthy
+      state_store:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - galactic-net
+
+volumes:
+  broker_data:
+  state_data:
+
+networks:
+  galactic-net:
+    driver: bridge

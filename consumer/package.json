@@ -1,0 +1,14 @@
+{
+  "name": "galactic-consumer",
+  "version": "1.0.0",
+  "description": "Consumer Worker for the Galactic Message Relay",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.4",
+    "ioredis": "^5.4.1"
+  }
+}
